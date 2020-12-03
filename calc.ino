@@ -4,7 +4,7 @@
 /*
  * Wavetable calculator for the dr1.a firmware.
  *
- * Copyright (C) 2017-2018  John A. Tuffen
+ * Copyright (C) 2017-2020  John A. Tuffen
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

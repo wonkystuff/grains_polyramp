@@ -1,7 +1,10 @@
-/* dr1.a - firmware for a minimal drone-synth (or VCDO) for the WonkyStuff
- * 'core1' board.
- *
- * Copyright (C) 2017-2018  John A. Tuffen
+/* Minimal sine generator for testing AE Modular Grains. Very much based
+ *  on the dr1.a wonkystuff firmware, so there may be some residual stuff
+ *  hanging around from that…
+ * 
+ * Pitch is controlled by P1/IN 1
+ * 
+ * Copyright (C) 2017-2020  John A. Tuffen
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +23,6 @@
  */
 
 #include "calc.h"
-#define NUM_ADCS (4)
-#define RESET_ACTIVE (1)  // we're programming via Arduino, so the reset better be active!
 
 // Base-timer is running at 16MHz
 #define F_TIM (16000000L)
@@ -30,8 +31,6 @@
 // enable ADC, start conversion, prescaler = /64 gives us an ADC clock of 8MHz/64 (125kHz)
 #define ADCSRAVAL ( _BV(ADEN) | _BV(ADSC) | _BV(ADPS2) | _BV(ADPS1)  | _BV(ADIE) )
 
-// Remember(!) the input clock is 64MHz, therefore all rates
-// are relative to that.
 // let the preprocessor calculate the various register values 'coz
 // they don't change after compile time
 #if ((F_TIM/(SRATE)) < 255)
@@ -50,11 +49,6 @@ uint16_t          pi;         // wavetable current phase increment (how much pha
 
 void setup()
 {
-//  PLLCSR |= _BV(PLLE);                // Enable 64 MHz PLL
-//  delayMicroseconds(100);             // Stabilize
-//  while (!(PLLCSR & _BV(PLOCK)));     // Wait for it...
-//  PLLCSR |= _BV(PCKE);                // Timer1 source = PLL
-//
   CLKPR = _BV(CLKPCE);
   CLKPR = 0;
   
@@ -67,7 +61,7 @@ void setup()
   TCCR2A = _BV(WGM20)  | _BV(WGM21) |  // fast PWM to OCRA
            _BV(COM2A1) | _BV(COM2A0);  // OCR2A set at match; cleared at start
   TCCR2B = _BV(CS20);                  // fast pwm part 2; no prescale on input clock
-  //OSCOUTREG = 128;                     // start with 50% duty cycle on the PWM
+  //OSCOUTREG = 128;                   // start with 50% duty cycle on the PWM
   pinMode(11, OUTPUT);                 // PWM output pin (grains)
 
   ///////////////////////////////////////////////
@@ -93,6 +87,7 @@ void loop()
 // deal with oscillator
 ISR(TIMER0_COMPA_vect)
 {
+  // Check that the sampling rate is running correctly (25kHz - see calc.h)
   PORTB ^= 0x01;
   // increment the phase counter
   phase += pi;
@@ -107,6 +102,7 @@ ISR(TIMER0_COMPA_vect)
   // then backwards (and inverted)
   uint16_t ix = p < WTSIZE ? p : ((2*WTSIZE-1) - p);
 
+  // hangover from the dr1.a code. Can't be bothered to change it tbh.
   uint8_t s1 = pgm_read_byte(&sine[ix]);
   uint8_t s2 = pgm_read_byte(&sine[ix]);
   uint8_t s = s1 + s2;
