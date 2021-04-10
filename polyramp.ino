@@ -44,25 +44,22 @@
 
 #define OSCOUTREG (OCR2A)
 
-uint16_t          phase;      // The accumulated phase (distance through the wavetable)
-uint16_t          pi;         // wavetable current phase increment (how much phase will increase per sample)
-
 void setup()
 {
   CLKPR = _BV(CLKPCE);
   CLKPR = 0;
   
   ///////////////////////////////////////////////
-  // Set up Timer/Counter1 for 250kHz PWM output
-  TCCR2A = 0;                  // stop the timer
-  TCCR2B = 0;                  // stop the timer
-  TCNT2 = 0;                   // zero the timer
-  GTCCR = _BV(PSRASY);         // reset the prescaler
-  TCCR2A = _BV(WGM20)  | _BV(WGM21) |  // fast PWM to OCRA
-           _BV(COM2A1) | _BV(COM2A0);  // OCR2A set at match; cleared at start
-  TCCR2B = _BV(CS20);                  // fast pwm part 2; no prescale on input clock
-  //OSCOUTREG = 128;                   // start with 50% duty cycle on the PWM
-  pinMode(11, OUTPUT);                 // PWM output pin (grains)
+  // Set up Timer/Counter2 for PWM output
+  TCCR2A = 0;                           // stop the timer
+  TCCR2B = 0;                           // stop the timer
+  TCNT2 = 0;                            // zero the timer
+  GTCCR = _BV(PSRASY);                  // reset the prescaler
+  TCCR2A = _BV(WGM20)  | _BV(WGM21) |   // fast PWM to OCRA
+           _BV(COM2A1) | _BV(COM2A0);   // OCR2A set at match; cleared at start
+  TCCR2B = _BV(CS20);                   // fast pwm part 2; no prescale on input clock
+  //OSCOUTREG = 128;                    // start with 50% duty cycle on the PWM
+  pinMode(11, OUTPUT);                  // PWM output pin (grains)
 
   ///////////////////////////////////////////////
   // Set up Timer/Counter0 for sample-rate ISR
@@ -77,36 +74,57 @@ void setup()
   pinMode(8, OUTPUT);         // marker
 }
 
+#define NUMVOICES 8
+
+typedef struct {
+  uint16_t phase;
+  uint16_t phase_inc;
+} accumulator_t;
+
+volatile accumulator_t accum[NUMVOICES];
+
 // There are no real time constraints here, this is an idle loop after
 // all...
 void loop()
 {
-    pi = pgm_read_word(&octaveLookup[analogRead(2)]);
+  uint8_t offs = analogRead(0) >> 6;        // P3 - detune
+   
+  accum[0].phase_inc = pgm_read_word(&octaveLookup[analogRead(2)]);   // CV Input 1 (P1)
+  accum[1].phase_inc = accum[0].phase_inc/2;
+  accum[2].phase_inc = accum[0].phase_inc+offs;
+  accum[3].phase_inc = accum[0].phase_inc-offs;
+
+  // harmonic oscillators use 3 bits: 0-7
+  // CV Input 2 (P2)
+  accum[4].phase_inc = accum[0].phase_inc * ((analogRead(1) >> 7)+1) + offs;
+  accum[5].phase_inc = accum[4].phase_inc/2;
+
+  // CV Input 3
+  accum[6].phase_inc = accum[0].phase_inc * ((analogRead(3) >> 7)+1) - offs;
+  accum[7].phase_inc = accum[6].phase_inc/2;
 }
 
 // deal with oscillator
 ISR(TIMER0_COMPA_vect)
 {
-  // Check that the sampling rate is running correctly (25kHz - see calc.h)
-  PORTB ^= 0x01;
-  // increment the phase counter
-  phase += pi;
+  uint16_t oldPhase = accum[0].phase;
+  uint8_t outVal = 0;
 
-  // By shifting the 16 bit number by 6, we are left with a number
-  // in the range 0-1023 (0-0x3ff)
-  uint16_t p = (phase) >> FRACBITS;
+  int i;
+  for(i=0; i< NUMVOICES;i++)
+  {
+    outVal += accum[i].phase >> 11;
+    accum[i].phase += accum[i].phase_inc;   // move the oscillator's accumulator on
+  }
 
-  // look up the output-value based on the current phase counter (truncated)
+  OSCOUTREG = outVal;
 
-  // to save wavetable space, we play the wavetable forward (first half),
-  // then backwards (and inverted)
-  uint16_t ix = p < WTSIZE ? p : ((2*WTSIZE-1) - p);
-
-  // hangover from the dr1.a code. Can't be bothered to change it tbh.
-  uint8_t s1 = pgm_read_byte(&sine[ix]);
-  uint8_t s2 = pgm_read_byte(&sine[ix]);
-  uint8_t s = s1 + s2;
-
-  // invert the wave for the second half
-  OSCOUTREG = p < WTSIZE ? -s : s;
+  // If the new value of phase is smaller than it
+  // was, then we have completed a ramp-cycle, so
+  // change the state of output 2 - this gives us
+  // a square wave an octave down from output 1.
+  if (accum[0].phase < oldPhase)
+  {
+    PORTB ^= 0x01;  // Sub oscillator square on the D output
+  }
 }
