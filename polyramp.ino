@@ -4,7 +4,7 @@
  * 
  * Pitch is controlled by P1/IN 1
  * 
- * Copyright (C) 2017-2020  John A. Tuffen
+ * Copyright (C) 2017-2021  John A. Tuffen
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
